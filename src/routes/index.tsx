@@ -358,6 +358,27 @@ function Index() {
           </Card>
         )}
 
+        {/* QA stats */}
+        {qa && qa.qaDone > 0 && (
+          <Card className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <span className="font-medium flex items-center gap-2">
+                <Gauge className="h-4 w-4" /> Automated QA · ElevenLabs Scribe v2
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {qa.qaDone}/{qa.totalSamples} samples · {qa.qaPending} pending
+              </span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
+              <QaMetric label="Avg score" value={qa.avgScore.toFixed(1)} hint="0–100" />
+              <QaMetric label="Avg WER" value={qa.avgWer.toFixed(3)} hint="word err" />
+              <QaMetric label="Avg CER" value={qa.avgCer.toFixed(3)} hint="char err" />
+              <QaMetric label="Passing ≥75" value={String(qa.passing)} hint="auto-approve" tone="success" />
+              <QaMetric label="Flagged <50" value={String(qa.flagged)} hint="needs review" tone="warning" />
+            </div>
+          </Card>
+        )}
+
         {/* Pipeline */}
         <section>
           <h3 className="font-semibold mb-3">Pipeline stages</h3>
@@ -365,7 +386,7 @@ function Index() {
             {[
               { label: "Prompts", state: "live", desc: "LLM-driven EG-Arabic generation" },
               { label: "Synthesis", state: "live", desc: "ElevenLabs multilingual v2" },
-              { label: "Auto QA", state: "scaffolded", desc: "Scribe v2 + WER/CER" },
+              { label: "Auto QA", state: "live", desc: "Scribe v2 + WER/CER" },
               { label: "Review", state: "scaffolded", desc: "Waveform + diff UI" },
               { label: "Export", state: "scaffolded", desc: "JSONL · CSV · HF · Whisper" },
             ].map((s) => (
@@ -388,6 +409,45 @@ function Index() {
             ))}
           </div>
         </section>
+
+        {/* Recent QA */}
+        {(qaListQuery.data?.length ?? 0) > 0 && (
+          <section>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold">Recent QA results</h3>
+              <span className="text-xs text-muted-foreground">{qaListQuery.data?.length} shown</span>
+            </div>
+            <div className="space-y-2">
+              {qaListQuery.data?.map((r) => (
+                <Card key={r.id} className="p-4">
+                  <div className="flex items-start gap-4">
+                    <ScoreBadge score={r.quality_score} />
+                    <div className="flex-1 min-w-0 space-y-2">
+                      <p dir="rtl" className="text-sm">
+                        <span className="text-muted-foreground text-[10px] uppercase mr-2">ref</span>
+                        {r.audio_samples?.prompts?.text ?? "—"}
+                      </p>
+                      <p dir="rtl" className="text-sm text-accent/90">
+                        <span className="text-muted-foreground text-[10px] uppercase mr-2">hyp</span>
+                        {r.transcript ?? "—"}
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        <Tag>WER {Number(r.wer ?? 0).toFixed(2)}</Tag>
+                        <Tag>CER {Number(r.cer ?? 0).toFixed(2)}</Tag>
+                        {r.audio_samples?.prompts?.category && <Tag>{r.audio_samples.prompts.category}</Tag>}
+                        {r.flags?.map((f) => (
+                          <span key={f} className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border border-warning/40 text-warning">
+                            {f}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Recent samples */}
         <section>
