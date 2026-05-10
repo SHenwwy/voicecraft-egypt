@@ -81,6 +81,8 @@ function Index() {
   const stats = useServerFn(synthesisStats);
   const qaTickFn = useServerFn(qaTick);
   const qaStatsFn = useServerFn(qaStats);
+  const previewExp = useServerFn(previewExport);
+  const dlPipeline = useServerFn(downloadPythonPipeline);
 
   const [count, setCount] = useState(20);
   const [seed, setSeed] = useState<string>("");
