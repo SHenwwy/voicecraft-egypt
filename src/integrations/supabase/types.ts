@@ -14,7 +14,421 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      audio_samples: {
+        Row: {
+          bytes: number | null
+          clipped: boolean | null
+          created_at: string
+          duration_sec: number | null
+          format: string
+          id: string
+          job_id: string | null
+          params: Json
+          peak: number | null
+          prompt_id: string
+          rms: number | null
+          sample_rate: number | null
+          silence_ratio: number | null
+          storage_path: string
+          voice_id: string | null
+        }
+        Insert: {
+          bytes?: number | null
+          clipped?: boolean | null
+          created_at?: string
+          duration_sec?: number | null
+          format?: string
+          id?: string
+          job_id?: string | null
+          params?: Json
+          peak?: number | null
+          prompt_id: string
+          rms?: number | null
+          sample_rate?: number | null
+          silence_ratio?: number | null
+          storage_path: string
+          voice_id?: string | null
+        }
+        Update: {
+          bytes?: number | null
+          clipped?: boolean | null
+          created_at?: string
+          duration_sec?: number | null
+          format?: string
+          id?: string
+          job_id?: string | null
+          params?: Json
+          peak?: number | null
+          prompt_id?: string
+          rms?: number | null
+          sample_rate?: number | null
+          silence_ratio?: number | null
+          storage_path?: string
+          voice_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audio_samples_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "synthesis_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "audio_samples_prompt_id_fkey"
+            columns: ["prompt_id"]
+            isOneToOne: false
+            referencedRelation: "prompts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "audio_samples_voice_id_fkey"
+            columns: ["voice_id"]
+            isOneToOne: false
+            referencedRelation: "voices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      audit_log: {
+        Row: {
+          action: string
+          created_at: string
+          detail: Json
+          entity: string
+          entity_id: string | null
+          id: number
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          detail?: Json
+          entity: string
+          entity_id?: string | null
+          id?: number
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          detail?: Json
+          entity?: string
+          entity_id?: string | null
+          id?: number
+        }
+        Relationships: []
+      }
+      dataset_versions: {
+        Row: {
+          created_at: string
+          description: string | null
+          filters: Json
+          id: string
+          name: string
+          sample_count: number
+          total_duration_sec: number
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          filters?: Json
+          id?: string
+          name: string
+          sample_count?: number
+          total_duration_sec?: number
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          filters?: Json
+          id?: string
+          name?: string
+          sample_count?: number
+          total_duration_sec?: number
+        }
+        Relationships: []
+      }
+      export_snapshots: {
+        Row: {
+          created_at: string
+          format: string
+          id: string
+          manifest: Json
+          sample_count: number
+          storage_path: string | null
+          version_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          format: string
+          id?: string
+          manifest?: Json
+          sample_count?: number
+          storage_path?: string | null
+          version_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          format?: string
+          id?: string
+          manifest?: Json
+          sample_count?: number
+          storage_path?: string | null
+          version_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "export_snapshots_version_id_fkey"
+            columns: ["version_id"]
+            isOneToOne: false
+            referencedRelation: "dataset_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      prompts: {
+        Row: {
+          category: string
+          created_at: string
+          difficulty: string
+          emotion: string | null
+          est_duration_sec: number
+          id: string
+          language_mix_pct: number
+          length_bucket: string
+          metadata: Json
+          noise_level: string | null
+          normalized_text: string
+          seed: number | null
+          speaking_style: string | null
+          text: string
+          token_count: number
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          difficulty?: string
+          emotion?: string | null
+          est_duration_sec?: number
+          id?: string
+          language_mix_pct?: number
+          length_bucket?: string
+          metadata?: Json
+          noise_level?: string | null
+          normalized_text: string
+          seed?: number | null
+          speaking_style?: string | null
+          text: string
+          token_count?: number
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          difficulty?: string
+          emotion?: string | null
+          est_duration_sec?: number
+          id?: string
+          language_mix_pct?: number
+          length_bucket?: string
+          metadata?: Json
+          noise_level?: string | null
+          normalized_text?: string
+          seed?: number | null
+          speaking_style?: string | null
+          text?: string
+          token_count?: number
+        }
+        Relationships: []
+      }
+      qa_results: {
+        Row: {
+          cer: number | null
+          created_at: string
+          flags: Json
+          id: string
+          language_drift: boolean | null
+          notes: string | null
+          quality_score: number
+          sample_id: string
+          transcript: string | null
+          wer: number | null
+        }
+        Insert: {
+          cer?: number | null
+          created_at?: string
+          flags?: Json
+          id?: string
+          language_drift?: boolean | null
+          notes?: string | null
+          quality_score?: number
+          sample_id: string
+          transcript?: string | null
+          wer?: number | null
+        }
+        Update: {
+          cer?: number | null
+          created_at?: string
+          flags?: Json
+          id?: string
+          language_drift?: boolean | null
+          notes?: string | null
+          quality_score?: number
+          sample_id?: string
+          transcript?: string | null
+          wer?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "qa_results_sample_id_fkey"
+            columns: ["sample_id"]
+            isOneToOne: false
+            referencedRelation: "audio_samples"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reviews: {
+        Row: {
+          created_at: string
+          edited_transcript: string | null
+          id: string
+          reviewed_at: string | null
+          reviewer_id: string | null
+          reviewer_notes: string | null
+          sample_id: string
+          status: string
+          tags: Json
+        }
+        Insert: {
+          created_at?: string
+          edited_transcript?: string | null
+          id?: string
+          reviewed_at?: string | null
+          reviewer_id?: string | null
+          reviewer_notes?: string | null
+          sample_id: string
+          status?: string
+          tags?: Json
+        }
+        Update: {
+          created_at?: string
+          edited_transcript?: string | null
+          id?: string
+          reviewed_at?: string | null
+          reviewer_id?: string | null
+          reviewer_notes?: string | null
+          sample_id?: string
+          status?: string
+          tags?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reviews_sample_id_fkey"
+            columns: ["sample_id"]
+            isOneToOne: true
+            referencedRelation: "audio_samples"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      synthesis_jobs: {
+        Row: {
+          attempts: number
+          audio_sample_id: string | null
+          created_at: string
+          error: string | null
+          fingerprint: string
+          finished_at: string | null
+          id: string
+          max_attempts: number
+          next_run_at: string
+          params: Json
+          prompt_id: string
+          started_at: string | null
+          status: string
+          voice_id: string | null
+        }
+        Insert: {
+          attempts?: number
+          audio_sample_id?: string | null
+          created_at?: string
+          error?: string | null
+          fingerprint: string
+          finished_at?: string | null
+          id?: string
+          max_attempts?: number
+          next_run_at?: string
+          params?: Json
+          prompt_id: string
+          started_at?: string | null
+          status?: string
+          voice_id?: string | null
+        }
+        Update: {
+          attempts?: number
+          audio_sample_id?: string | null
+          created_at?: string
+          error?: string | null
+          fingerprint?: string
+          finished_at?: string | null
+          id?: string
+          max_attempts?: number
+          next_run_at?: string
+          params?: Json
+          prompt_id?: string
+          started_at?: string | null
+          status?: string
+          voice_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "synthesis_jobs_prompt_id_fkey"
+            columns: ["prompt_id"]
+            isOneToOne: false
+            referencedRelation: "prompts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "synthesis_jobs_voice_id_fkey"
+            columns: ["voice_id"]
+            isOneToOne: false
+            referencedRelation: "voices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      voices: {
+        Row: {
+          created_at: string
+          gender: string
+          id: string
+          is_active: boolean
+          label: string
+          language: string
+          provider: string
+          voice_id: string
+        }
+        Insert: {
+          created_at?: string
+          gender?: string
+          id?: string
+          is_active?: boolean
+          label: string
+          language?: string
+          provider?: string
+          voice_id: string
+        }
+        Update: {
+          created_at?: string
+          gender?: string
+          id?: string
+          is_active?: boolean
+          label?: string
+          language?: string
+          provider?: string
+          voice_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
