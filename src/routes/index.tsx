@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { generatePrompts, queueSynthesis } from "@/lib/prompts.functions";
 import { synthesisTick, synthesisStats } from "@/lib/synthesis.functions";
 import { qaTick, qaStats } from "@/lib/qa.functions";
+import { previewExport, downloadPythonPipeline } from "@/lib/export.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { CATEGORIES } from "@/lib/ssdp/categories";
 import { Button } from "@/components/ui/button";
