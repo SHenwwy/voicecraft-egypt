@@ -230,8 +230,11 @@ function Index() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <Link to="/review" className="text-sm font-medium hover:text-accent transition-colors">
+              Review →
+            </Link>
             <Badge variant="outline" className="border-success/40 text-success">
-              Stages 1–2 · live
+              Stages 1–3 · live
             </Badge>
           </div>
         </div>
