@@ -390,7 +390,7 @@ function Index() {
               { label: "Prompts", state: "live", desc: "LLM-driven EG-Arabic generation" },
               { label: "Synthesis", state: "live", desc: "ElevenLabs multilingual v2" },
               { label: "Auto QA", state: "live", desc: "Scribe v2 + WER/CER" },
-              { label: "Review", state: "scaffolded", desc: "Waveform + diff UI" },
+              { label: "Review", state: "live", desc: "Waveform + diff UI" },
               { label: "Export", state: "scaffolded", desc: "JSONL · CSV · HF · Whisper" },
             ].map((s) => (
               <Card key={s.label} className="p-4">
