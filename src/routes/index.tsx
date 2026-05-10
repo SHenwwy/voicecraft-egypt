@@ -237,7 +237,7 @@ function Index() {
               Review →
             </Link>
             <Badge variant="outline" className="border-success/40 text-success">
-              Stages 1–3 · live
+              Stages 1–5 · live
             </Badge>
           </div>
         </div>
