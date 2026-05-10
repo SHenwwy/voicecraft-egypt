@@ -527,18 +527,129 @@ function Index() {
           </div>
         </section>
 
-        <section className="border-t border-border/50 pt-8">
-          <div className="flex items-start gap-3 text-sm">
-            <Download className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
-            <p className="text-muted-foreground">
-              Stages 1–2 (prompts + synthesis) are live. Stages 3–5 (auto QA via Scribe v2, review dashboard, export
-              manifests) are next. The full Python + Celery + FastAPI monorepo deliverable is generated as a
-              downloadable zip in a follow-up turn.
-            </p>
-          </div>
-        </section>
+        <ExportPanel previewExp={previewExp} dlPipeline={dlPipeline} />
       </main>
     </div>
+  );
+}
+
+type ExportFormat = "jsonl" | "csv" | "hf" | "whisper";
+
+function ExportPanel({
+  previewExp,
+  dlPipeline,
+}: {
+  previewExp: (args: { data: { format: ExportFormat } }) => Promise<{
+    count: number;
+    totalDuration: number;
+    content: string;
+    mime: string;
+    filename: string;
+  }>;
+  dlPipeline: () => Promise<{ base64: string; filename: string; bytes: number }>;
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const triggerDownload = (filename: string, mime: string, blob: Blob) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const exportFormat = async (format: ExportFormat) => {
+    setBusy(format);
+    try {
+      const r = await previewExp({ data: { format } });
+      if (r.count === 0) {
+        toast.error("No approved samples yet — review some samples first");
+        return;
+      }
+      triggerDownload(r.filename, r.mime, new Blob([r.content], { type: r.mime }));
+      toast.success(`Exported ${r.count} samples (${r.totalDuration.toFixed(1)}s total)`);
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const downloadPipeline = async () => {
+    setBusy("zip");
+    try {
+      const r = await dlPipeline();
+      const bin = atob(r.base64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      triggerDownload(r.filename, "application/zip", new Blob([bytes], { type: "application/zip" }));
+      toast.success(`Downloaded Python pipeline (${(r.bytes / 1024).toFixed(0)} KB)`);
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const formats: { id: ExportFormat; label: string; desc: string }[] = [
+    { id: "jsonl", label: "JSONL", desc: "One JSON per line · STT fine-tuning" },
+    { id: "csv", label: "CSV", desc: "Flat columns · spreadsheet-friendly" },
+    { id: "hf", label: "HuggingFace", desc: "audiofolder metadata.csv" },
+    { id: "whisper", label: "Whisper", desc: "NeMo / Whisper manifest" },
+  ];
+
+  return (
+    <section className="border-t border-border/50 pt-8 space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="font-semibold flex items-center gap-2">
+            <Download className="h-4 w-4" /> Training-ready export
+          </h3>
+          <p className="text-xs text-muted-foreground mt-1">
+            Exports approved reviews only. Audio paths resolve to public Storage URLs.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {formats.map((f) => (
+          <Card key={f.id} className="p-4 flex flex-col gap-3">
+            <div>
+              <div className="font-medium">{f.label}</div>
+              <p className="text-xs text-muted-foreground mt-0.5">{f.desc}</p>
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busy === f.id}
+              onClick={() => exportFormat(f.id)}
+            >
+              {busy === f.id ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+              Download
+            </Button>
+          </Card>
+        ))}
+      </div>
+
+      <Card className="p-5 flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+        <div className="space-y-1">
+          <div className="font-medium flex items-center gap-2">
+            <Cpu className="h-4 w-4" /> Python pipeline (FastAPI · Celery · pluggable TTS)
+          </div>
+          <p className="text-xs text-muted-foreground max-w-2xl">
+            Self-hostable Python monorepo: ElevenLabs + XTTS-v2 backends, Whisper/Scribe QA, Postgres/Redis, exporters
+            for JSONL/CSV/HF/Whisper. Drop-in <code className="text-foreground">docker compose up</code>.
+          </p>
+        </div>
+        <Button onClick={downloadPipeline} disabled={busy === "zip"}>
+          {busy === "zip" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+          Download .zip
+        </Button>
+      </Card>
+    </section>
   );
 }
 
