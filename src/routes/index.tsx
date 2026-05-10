@@ -566,3 +566,36 @@ function Tag({ children }: { children: React.ReactNode }) {
     </span>
   );
 }
+
+function QaMetric({
+  label,
+  value,
+  hint,
+  tone,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  tone?: "success" | "warning";
+}) {
+  const toneCls =
+    tone === "success" ? "text-success" : tone === "warning" ? "text-warning" : "text-foreground";
+  return (
+    <div className="rounded-md border border-border/60 p-3">
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className={`text-xl font-semibold tracking-tight ${toneCls}`}>{value}</div>
+      {hint && <div className="text-[10px] text-muted-foreground">{hint}</div>}
+    </div>
+  );
+}
+
+function ScoreBadge({ score }: { score: number }) {
+  const tone =
+    score >= 75 ? "border-success/50 text-success" : score >= 50 ? "border-warning/50 text-warning" : "border-destructive/50 text-destructive";
+  return (
+    <div className={`shrink-0 h-12 w-12 rounded-md border ${tone} grid place-items-center`}>
+      <div className="text-base font-semibold leading-none">{score}</div>
+      <div className="text-[9px] uppercase tracking-wide text-muted-foreground">score</div>
+    </div>
+  );
+}
