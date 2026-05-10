@@ -60,12 +60,26 @@ type Sample = {
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const audioUrl = (path: string) => `${SUPABASE_URL}/storage/v1/object/public/ssdp-audio/${path}`;
 
+type QaRow = {
+  id: string;
+  sample_id: string;
+  transcript: string | null;
+  wer: number | null;
+  cer: number | null;
+  quality_score: number;
+  language_drift: boolean | null;
+  flags: string[];
+  audio_samples?: { storage_path: string; prompts?: { text: string; category: string } | null } | null;
+};
+
 function Index() {
   const qc = useQueryClient();
   const generate = useServerFn(generatePrompts);
   const queue = useServerFn(queueSynthesis);
   const tick = useServerFn(synthesisTick);
   const stats = useServerFn(synthesisStats);
+  const qaTickFn = useServerFn(qaTick);
+  const qaStatsFn = useServerFn(qaStats);
 
   const [count, setCount] = useState(20);
   const [seed, setSeed] = useState<string>("");
@@ -105,6 +119,26 @@ function Index() {
     refetchInterval: 3000,
   });
 
+  const qaQuery = useQuery({
+    queryKey: ["qaStats"],
+    queryFn: () => qaStatsFn(),
+    refetchInterval: 4000,
+  });
+
+  const qaListQuery = useQuery({
+    queryKey: ["qaList"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("qa_results")
+        .select("id, sample_id, transcript, wer, cer, quality_score, language_drift, flags, audio_samples(storage_path, prompts(text, category))")
+        .order("created_at", { ascending: false })
+        .limit(15);
+      if (error) throw error;
+      return (data ?? []) as unknown as QaRow[];
+    },
+    refetchInterval: 4000,
+  });
+
   const samplesQuery = useQuery({
     queryKey: ["samples"],
     queryFn: async () => {
@@ -140,7 +174,7 @@ function Index() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  // Worker tick loop — runs in browser, calls server fn that processes a small batch
+  // Worker tick loop — interleaves synthesis + QA
   useEffect(() => {
     if (!workerOn) return;
     let cancelled = false;
@@ -152,11 +186,14 @@ function Index() {
         }
         tickingRef.current = true;
         try {
-          const r = await tick({ data: { batch: 3 } });
+          const synth = await tick({ data: { batch: 3 } });
+          const qa = await qaTickFn({ data: { batch: 2 } });
           qc.invalidateQueries({ queryKey: ["jobStats"] });
           qc.invalidateQueries({ queryKey: ["samples"] });
           qc.invalidateQueries({ queryKey: ["stats"] });
-          if (r.processed === 0) {
+          qc.invalidateQueries({ queryKey: ["qaStats"] });
+          qc.invalidateQueries({ queryKey: ["qaList"] });
+          if (synth.processed === 0 && qa.processed === 0) {
             await new Promise((res) => setTimeout(res, 2500));
           }
         } catch (e) {
@@ -171,11 +208,12 @@ function Index() {
     return () => {
       cancelled = true;
     };
-  }, [workerOn, tick, qc]);
+  }, [workerOn, tick, qaTickFn, qc]);
 
   const j = jobsQuery.data ?? { pending: 0, running: 0, succeeded: 0, failed: 0 };
   const total = j.pending + j.running + j.succeeded + j.failed;
   const pct = total ? Math.round(((j.succeeded + j.failed) / total) * 100) : 0;
+  const qa = qaQuery.data;
 
   return (
     <div className="min-h-screen">
