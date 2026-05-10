@@ -100,7 +100,7 @@ function Index() {
 
   const jobsQuery = useQuery({
     queryKey: ["jobStats"],
-    queryFn: () => stats({ data: undefined as unknown as Record<string, never> }),
+    queryFn: () => stats(),
     refetchInterval: 3000,
   });
 
