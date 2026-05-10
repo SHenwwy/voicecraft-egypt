@@ -1,17 +1,19 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { generatePrompts } from "@/lib/prompts.functions";
+import { useEffect, useRef, useState } from "react";
+import { generatePrompts, queueSynthesis } from "@/lib/prompts.functions";
+import { synthesisTick, synthesisStats } from "@/lib/synthesis.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { CATEGORIES } from "@/lib/ssdp/categories";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
-import { Loader2, Sparkles, Database, Mic, ListChecks, Download } from "lucide-react";
+import { Loader2, Sparkles, Database, Mic, ListChecks, Download, Play, Cpu, AudioLines } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -41,11 +43,33 @@ type Prompt = {
   created_at: string;
 };
 
+type Sample = {
+  id: string;
+  prompt_id: string;
+  voice_id: string | null;
+  storage_path: string;
+  duration_sec: number | null;
+  bytes: number | null;
+  clipped: boolean | null;
+  created_at: string;
+  prompts?: { text: string; category: string } | null;
+  voices?: { label: string; gender: string } | null;
+};
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+const audioUrl = (path: string) => `${SUPABASE_URL}/storage/v1/object/public/ssdp-audio/${path}`;
+
 function Index() {
   const qc = useQueryClient();
   const generate = useServerFn(generatePrompts);
+  const queue = useServerFn(queueSynthesis);
+  const tick = useServerFn(synthesisTick);
+  const stats = useServerFn(synthesisStats);
+
   const [count, setCount] = useState(20);
   const [seed, setSeed] = useState<string>("");
+  const [workerOn, setWorkerOn] = useState(false);
+  const tickingRef = useRef(false);
 
   const promptsQuery = useQuery({
     queryKey: ["prompts"],
@@ -54,7 +78,7 @@ function Index() {
         .from("prompts")
         .select("*")
         .order("created_at", { ascending: false })
-        .limit(100);
+        .limit(50);
       if (error) throw error;
       return (data ?? []) as Prompt[];
     },
@@ -71,18 +95,32 @@ function Index() {
       ]);
       return { prompts: prompts ?? 0, samples: samples ?? 0, approved: reviews ?? 0 };
     },
-    refetchInterval: 5000,
+    refetchInterval: 4000,
+  });
+
+  const jobsQuery = useQuery({
+    queryKey: ["jobStats"],
+    queryFn: () => stats({ data: undefined as unknown as Record<string, never> }),
+    refetchInterval: 3000,
+  });
+
+  const samplesQuery = useQuery({
+    queryKey: ["samples"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("audio_samples")
+        .select("id, prompt_id, voice_id, storage_path, duration_sec, bytes, clipped, created_at, prompts(text, category), voices(label, gender)")
+        .order("created_at", { ascending: false })
+        .limit(20);
+      if (error) throw error;
+      return (data ?? []) as unknown as Sample[];
+    },
+    refetchInterval: 4000,
   });
 
   const genMut = useMutation({
-    mutationFn: async () => {
-      return generate({
-        data: {
-          count,
-          seed: seed ? Number(seed) : undefined,
-        },
-      });
-    },
+    mutationFn: async () =>
+      generate({ data: { count, seed: seed ? Number(seed) : undefined } }),
     onSuccess: (res) => {
       toast.success(`Generated ${res.inserted} prompts (seed ${res.seed}, ${res.failures} failed)`);
       qc.invalidateQueries({ queryKey: ["prompts"] });
@@ -91,10 +129,57 @@ function Index() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const queueMut = useMutation({
+    mutationFn: async () => queue({ data: { all: true } }),
+    onSuccess: (r) => {
+      toast.success(`Queued ${r.queued} synthesis jobs`);
+      qc.invalidateQueries({ queryKey: ["jobStats"] });
+      setWorkerOn(true);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Worker tick loop — runs in browser, calls server fn that processes a small batch
+  useEffect(() => {
+    if (!workerOn) return;
+    let cancelled = false;
+    const loop = async () => {
+      while (!cancelled) {
+        if (tickingRef.current) {
+          await new Promise((r) => setTimeout(r, 500));
+          continue;
+        }
+        tickingRef.current = true;
+        try {
+          const r = await tick({ data: { batch: 3 } });
+          qc.invalidateQueries({ queryKey: ["jobStats"] });
+          qc.invalidateQueries({ queryKey: ["samples"] });
+          qc.invalidateQueries({ queryKey: ["stats"] });
+          if (r.processed === 0) {
+            await new Promise((res) => setTimeout(res, 2500));
+          }
+        } catch (e) {
+          toast.error((e as Error).message);
+          await new Promise((res) => setTimeout(res, 3000));
+        } finally {
+          tickingRef.current = false;
+        }
+      }
+    };
+    loop();
+    return () => {
+      cancelled = true;
+    };
+  }, [workerOn, tick, qc]);
+
+  const j = jobsQuery.data ?? { pending: 0, running: 0, succeeded: 0, failed: 0 };
+  const total = j.pending + j.running + j.succeeded + j.failed;
+  const pct = total ? Math.round(((j.succeeded + j.failed) / total) * 100) : 0;
+
   return (
     <div className="min-h-screen">
       <Toaster theme="dark" position="top-right" />
-      <header className="border-b border-border/50 backdrop-blur">
+      <header className="border-b border-border/50 backdrop-blur sticky top-0 z-10 bg-background/80">
         <div className="mx-auto max-w-7xl px-6 py-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-primary to-accent grid place-items-center font-bold text-primary-foreground">
@@ -105,9 +190,11 @@ function Index() {
               <p className="text-xs text-muted-foreground">Synthetic Speech Data Pipeline · Egyptian Arabic</p>
             </div>
           </div>
-          <Badge variant="outline" className="border-accent/40 text-accent">
-            Stage 1 · live
-          </Badge>
+          <div className="flex items-center gap-3">
+            <Badge variant="outline" className="border-success/40 text-success">
+              Stages 1–2 · live
+            </Badge>
+          </div>
         </div>
       </header>
 
@@ -123,8 +210,8 @@ function Index() {
               .
             </h2>
             <p className="text-muted-foreground max-w-xl">
-              An end-to-end pipeline that generates dialect-aware prompts, synthesizes audio with diverse voices,
-              auto-scores quality, and exports training-ready manifests for STT fine-tuning.
+              Dialect-aware prompts, ElevenLabs Multilingual v2 synthesis with prosody jitter, automated QA, and
+              training-ready manifests for STT fine-tuning.
             </p>
             <div className="flex flex-wrap gap-2 pt-2">
               {["Franco-Arabic", "Code-switching", "Slang", "Numbers", "Sarcasm", "Voice notes"].map((t) => (
@@ -135,8 +222,8 @@ function Index() {
             </div>
           </div>
 
-          <Card className="p-6 glass">
-            <div className="flex items-center gap-2 mb-4">
+          <Card className="p-6 glass space-y-4">
+            <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-accent" />
               <h3 className="font-medium">Generate prompts</h3>
             </div>
@@ -161,31 +248,51 @@ function Index() {
                 />
               </div>
             </div>
-            <Button
-              className="w-full mt-4"
-              disabled={genMut.isPending}
-              onClick={() => genMut.mutate()}
-            >
+            <Button className="w-full" disabled={genMut.isPending} onClick={() => genMut.mutate()}>
               {genMut.isPending ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Generating…
-                </>
+                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Generating…</>
               ) : (
                 <>Generate {count} prompts</>
               )}
             </Button>
-            <p className="text-xs text-muted-foreground mt-3">
-              Uses Lovable AI (Gemini 2.5 Flash). Each prompt is sampled across {CATEGORIES.length} domains with
-              randomized length, emotion, style, and code-switching ratio.
-            </p>
+
+            <div className="border-t border-border/50 pt-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Cpu className="h-4 w-4 text-accent" />
+                <h3 className="font-medium">Synthesize audio</h3>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="secondary"
+                  className="flex-1"
+                  disabled={queueMut.isPending}
+                  onClick={() => queueMut.mutate()}
+                >
+                  {queueMut.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                  Queue all prompts
+                </Button>
+                <div className="flex items-center gap-2 px-3 rounded-md border border-border/60">
+                  <Switch checked={workerOn} onCheckedChange={setWorkerOn} id="worker" />
+                  <label htmlFor="worker" className="text-xs">Worker</label>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                ElevenLabs Multilingual v2 · randomized stability/similarity/style/speed per job for diversity.
+              </p>
+            </div>
           </Card>
         </section>
 
         {/* Stats */}
-        <section className="grid sm:grid-cols-3 gap-4">
+        <section className="grid sm:grid-cols-4 gap-4">
           <StatCard icon={<Database className="h-4 w-4" />} label="Prompts" value={statsQuery.data?.prompts ?? 0} />
           <StatCard icon={<Mic className="h-4 w-4" />} label="Audio samples" value={statsQuery.data?.samples ?? 0} />
+          <StatCard
+            icon={<Cpu className="h-4 w-4" />}
+            label="Jobs pending / running"
+            value={j.pending + j.running}
+            sub={`${j.succeeded} ok · ${j.failed} failed`}
+          />
           <StatCard
             icon={<ListChecks className="h-4 w-4" />}
             label="Approved for export"
@@ -193,13 +300,32 @@ function Index() {
           />
         </section>
 
+        {/* Job progress */}
+        {total > 0 && (
+          <Card className="p-4">
+            <div className="flex items-center justify-between mb-2 text-sm">
+              <span className="font-medium flex items-center gap-2"><AudioLines className="h-4 w-4" /> Synthesis progress</span>
+              <span className="text-muted-foreground">{j.succeeded + j.failed} / {total} ({pct}%)</span>
+            </div>
+            <div className="h-2 rounded-full bg-secondary/60 overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-primary to-accent transition-all" style={{ width: `${pct}%` }} />
+            </div>
+            <div className="flex gap-3 mt-2 text-xs text-muted-foreground">
+              <span>● pending {j.pending}</span>
+              <span className="text-accent">● running {j.running}</span>
+              <span className="text-success">● succeeded {j.succeeded}</span>
+              <span className="text-destructive">● failed {j.failed}</span>
+            </div>
+          </Card>
+        )}
+
         {/* Pipeline */}
         <section>
           <h3 className="font-semibold mb-3">Pipeline stages</h3>
           <div className="grid md:grid-cols-5 gap-3">
             {[
               { label: "Prompts", state: "live", desc: "LLM-driven EG-Arabic generation" },
-              { label: "Synthesis", state: "scaffolded", desc: "ElevenLabs multilingual v2" },
+              { label: "Synthesis", state: "live", desc: "ElevenLabs multilingual v2" },
               { label: "Auto QA", state: "scaffolded", desc: "Scribe v2 + WER/CER" },
               { label: "Review", state: "scaffolded", desc: "Waveform + diff UI" },
               { label: "Export", state: "scaffolded", desc: "JSONL · CSV · HF · Whisper" },
@@ -224,19 +350,53 @@ function Index() {
           </div>
         </section>
 
-        {/* Prompt list */}
+        {/* Recent samples */}
+        <section>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold">Recent audio samples</h3>
+            <span className="text-xs text-muted-foreground">{samplesQuery.data?.length ?? 0} shown</span>
+          </div>
+          <div className="space-y-2">
+            {(samplesQuery.data?.length ?? 0) === 0 && (
+              <Card className="p-6 text-center text-sm text-muted-foreground">
+                No audio yet. Generate prompts → Queue all → toggle Worker on.
+              </Card>
+            )}
+            {samplesQuery.data?.map((s) => (
+              <Card key={s.id} className="p-4">
+                <div className="flex items-start gap-4">
+                  <Play className="h-4 w-4 mt-1 text-accent shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p dir="rtl" className="text-sm leading-relaxed truncate">
+                      {s.prompts?.text ?? "—"}
+                    </p>
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {s.voices?.label && <Tag>{s.voices.label} · {s.voices.gender}</Tag>}
+                      {s.prompts?.category && <Tag>{s.prompts.category}</Tag>}
+                      {s.duration_sec && <Tag>{s.duration_sec}s</Tag>}
+                      {s.bytes && <Tag>{(s.bytes / 1024).toFixed(0)} KB</Tag>}
+                      {s.clipped && <span className="text-[10px] text-warning">⚠ flagged</span>}
+                    </div>
+                    <audio controls preload="none" className="w-full mt-2 h-8" src={audioUrl(s.storage_path)} />
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </section>
+
+        {/* Recent prompts */}
         <section>
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-semibold">Recent prompts</h3>
             <span className="text-xs text-muted-foreground">
-              {promptsQuery.data?.length ?? 0} shown · auto-refresh
+              {promptsQuery.data?.length ?? 0} shown · {CATEGORIES.length} domains · auto-refresh
             </span>
           </div>
           <div className="space-y-2">
-            {promptsQuery.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
             {promptsQuery.data?.length === 0 && (
               <Card className="p-8 text-center text-sm text-muted-foreground">
-                No prompts yet. Click <span className="text-foreground">Generate</span> above to seed the dataset.
+                No prompts yet. Click <span className="text-foreground">Generate</span> above.
               </Card>
             )}
             {promptsQuery.data?.map((p) => (
@@ -266,11 +426,9 @@ function Index() {
           <div className="flex items-start gap-3 text-sm">
             <Download className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
             <p className="text-muted-foreground">
-              Stage 1 (prompt generation) is live. Stages 2–5 (TTS synthesis, automated QA, review dashboard, export)
-              are scaffolded in the schema and require additional implementation passes — they are stubbed as a job
-              queue plus storage bucket and ready to be wired to ElevenLabs and Whisper. The full Python +
-              Celery + Next.js monorepo (the case-study deliverable) will be generated as a downloadable zip in a
-              follow-up turn.
+              Stages 1–2 (prompts + synthesis) are live. Stages 3–5 (auto QA via Scribe v2, review dashboard, export
+              manifests) are next. The full Python + Celery + FastAPI monorepo deliverable is generated as a
+              downloadable zip in a follow-up turn.
             </p>
           </div>
         </section>
@@ -279,7 +437,17 @@ function Index() {
   );
 }
 
-function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
+function StatCard({
+  icon,
+  label,
+  value,
+  sub,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number;
+  sub?: string;
+}) {
   return (
     <Card className="p-5">
       <div className="flex items-center gap-2 text-muted-foreground text-xs">
@@ -287,6 +455,7 @@ function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string
         {label}
       </div>
       <div className="text-3xl font-semibold tracking-tight mt-1">{value.toLocaleString()}</div>
+      {sub && <div className="text-[11px] text-muted-foreground mt-1">{sub}</div>}
     </Card>
   );
 }
