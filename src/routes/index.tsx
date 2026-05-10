@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { generatePrompts, queueSynthesis } from "@/lib/prompts.functions";
 import { synthesisTick, synthesisStats } from "@/lib/synthesis.functions";
+import { qaTick, qaStats } from "@/lib/qa.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { CATEGORIES } from "@/lib/ssdp/categories";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
-import { Loader2, Sparkles, Database, Mic, ListChecks, Download, Play, Cpu, AudioLines } from "lucide-react";
+import { Loader2, Sparkles, Database, Mic, ListChecks, Download, Play, Cpu, AudioLines, Gauge } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -59,12 +60,26 @@ type Sample = {
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const audioUrl = (path: string) => `${SUPABASE_URL}/storage/v1/object/public/ssdp-audio/${path}`;
 
+type QaRow = {
+  id: string;
+  sample_id: string;
+  transcript: string | null;
+  wer: number | null;
+  cer: number | null;
+  quality_score: number;
+  language_drift: boolean | null;
+  flags: string[];
+  audio_samples?: { storage_path: string; prompts?: { text: string; category: string } | null } | null;
+};
+
 function Index() {
   const qc = useQueryClient();
   const generate = useServerFn(generatePrompts);
   const queue = useServerFn(queueSynthesis);
   const tick = useServerFn(synthesisTick);
   const stats = useServerFn(synthesisStats);
+  const qaTickFn = useServerFn(qaTick);
+  const qaStatsFn = useServerFn(qaStats);
 
   const [count, setCount] = useState(20);
   const [seed, setSeed] = useState<string>("");
@@ -104,6 +119,26 @@ function Index() {
     refetchInterval: 3000,
   });
 
+  const qaQuery = useQuery({
+    queryKey: ["qaStats"],
+    queryFn: () => qaStatsFn(),
+    refetchInterval: 4000,
+  });
+
+  const qaListQuery = useQuery({
+    queryKey: ["qaList"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("qa_results")
+        .select("id, sample_id, transcript, wer, cer, quality_score, language_drift, flags, audio_samples(storage_path, prompts(text, category))")
+        .order("created_at", { ascending: false })
+        .limit(15);
+      if (error) throw error;
+      return (data ?? []) as unknown as QaRow[];
+    },
+    refetchInterval: 4000,
+  });
+
   const samplesQuery = useQuery({
     queryKey: ["samples"],
     queryFn: async () => {
@@ -139,7 +174,7 @@ function Index() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  // Worker tick loop — runs in browser, calls server fn that processes a small batch
+  // Worker tick loop — interleaves synthesis + QA
   useEffect(() => {
     if (!workerOn) return;
     let cancelled = false;
@@ -151,11 +186,14 @@ function Index() {
         }
         tickingRef.current = true;
         try {
-          const r = await tick({ data: { batch: 3 } });
+          const synth = await tick({ data: { batch: 3 } });
+          const qa = await qaTickFn({ data: { batch: 2 } });
           qc.invalidateQueries({ queryKey: ["jobStats"] });
           qc.invalidateQueries({ queryKey: ["samples"] });
           qc.invalidateQueries({ queryKey: ["stats"] });
-          if (r.processed === 0) {
+          qc.invalidateQueries({ queryKey: ["qaStats"] });
+          qc.invalidateQueries({ queryKey: ["qaList"] });
+          if (synth.processed === 0 && qa.processed === 0) {
             await new Promise((res) => setTimeout(res, 2500));
           }
         } catch (e) {
@@ -170,11 +208,12 @@ function Index() {
     return () => {
       cancelled = true;
     };
-  }, [workerOn, tick, qc]);
+  }, [workerOn, tick, qaTickFn, qc]);
 
   const j = jobsQuery.data ?? { pending: 0, running: 0, succeeded: 0, failed: 0 };
   const total = j.pending + j.running + j.succeeded + j.failed;
   const pct = total ? Math.round(((j.succeeded + j.failed) / total) * 100) : 0;
+  const qa = qaQuery.data;
 
   return (
     <div className="min-h-screen">
@@ -319,6 +358,27 @@ function Index() {
           </Card>
         )}
 
+        {/* QA stats */}
+        {qa && qa.qaDone > 0 && (
+          <Card className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <span className="font-medium flex items-center gap-2">
+                <Gauge className="h-4 w-4" /> Automated QA · ElevenLabs Scribe v2
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {qa.qaDone}/{qa.totalSamples} samples · {qa.qaPending} pending
+              </span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
+              <QaMetric label="Avg score" value={qa.avgScore.toFixed(1)} hint="0–100" />
+              <QaMetric label="Avg WER" value={qa.avgWer.toFixed(3)} hint="word err" />
+              <QaMetric label="Avg CER" value={qa.avgCer.toFixed(3)} hint="char err" />
+              <QaMetric label="Passing ≥75" value={String(qa.passing)} hint="auto-approve" tone="success" />
+              <QaMetric label="Flagged <50" value={String(qa.flagged)} hint="needs review" tone="warning" />
+            </div>
+          </Card>
+        )}
+
         {/* Pipeline */}
         <section>
           <h3 className="font-semibold mb-3">Pipeline stages</h3>
@@ -326,7 +386,7 @@ function Index() {
             {[
               { label: "Prompts", state: "live", desc: "LLM-driven EG-Arabic generation" },
               { label: "Synthesis", state: "live", desc: "ElevenLabs multilingual v2" },
-              { label: "Auto QA", state: "scaffolded", desc: "Scribe v2 + WER/CER" },
+              { label: "Auto QA", state: "live", desc: "Scribe v2 + WER/CER" },
               { label: "Review", state: "scaffolded", desc: "Waveform + diff UI" },
               { label: "Export", state: "scaffolded", desc: "JSONL · CSV · HF · Whisper" },
             ].map((s) => (
@@ -349,6 +409,45 @@ function Index() {
             ))}
           </div>
         </section>
+
+        {/* Recent QA */}
+        {(qaListQuery.data?.length ?? 0) > 0 && (
+          <section>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold">Recent QA results</h3>
+              <span className="text-xs text-muted-foreground">{qaListQuery.data?.length} shown</span>
+            </div>
+            <div className="space-y-2">
+              {qaListQuery.data?.map((r) => (
+                <Card key={r.id} className="p-4">
+                  <div className="flex items-start gap-4">
+                    <ScoreBadge score={r.quality_score} />
+                    <div className="flex-1 min-w-0 space-y-2">
+                      <p dir="rtl" className="text-sm">
+                        <span className="text-muted-foreground text-[10px] uppercase mr-2">ref</span>
+                        {r.audio_samples?.prompts?.text ?? "—"}
+                      </p>
+                      <p dir="rtl" className="text-sm text-accent/90">
+                        <span className="text-muted-foreground text-[10px] uppercase mr-2">hyp</span>
+                        {r.transcript ?? "—"}
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        <Tag>WER {Number(r.wer ?? 0).toFixed(2)}</Tag>
+                        <Tag>CER {Number(r.cer ?? 0).toFixed(2)}</Tag>
+                        {r.audio_samples?.prompts?.category && <Tag>{r.audio_samples.prompts.category}</Tag>}
+                        {r.flags?.map((f) => (
+                          <span key={f} className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border border-warning/40 text-warning">
+                            {f}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Recent samples */}
         <section>
@@ -465,5 +564,38 @@ function Tag({ children }: { children: React.ReactNode }) {
     <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border border-border/60 text-muted-foreground">
       {children}
     </span>
+  );
+}
+
+function QaMetric({
+  label,
+  value,
+  hint,
+  tone,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  tone?: "success" | "warning";
+}) {
+  const toneCls =
+    tone === "success" ? "text-success" : tone === "warning" ? "text-warning" : "text-foreground";
+  return (
+    <div className="rounded-md border border-border/60 p-3">
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className={`text-xl font-semibold tracking-tight ${toneCls}`}>{value}</div>
+      {hint && <div className="text-[10px] text-muted-foreground">{hint}</div>}
+    </div>
+  );
+}
+
+function ScoreBadge({ score }: { score: number }) {
+  const tone =
+    score >= 75 ? "border-success/50 text-success" : score >= 50 ? "border-warning/50 text-warning" : "border-destructive/50 text-destructive";
+  return (
+    <div className={`shrink-0 h-12 w-12 rounded-md border ${tone} grid place-items-center`}>
+      <div className="text-base font-semibold leading-none">{score}</div>
+      <div className="text-[9px] uppercase tracking-wide text-muted-foreground">score</div>
+    </div>
   );
 }
