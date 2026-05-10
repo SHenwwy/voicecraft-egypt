@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
@@ -230,8 +230,11 @@ function Index() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <Link to="/review" className="text-sm font-medium hover:text-accent transition-colors">
+              Review →
+            </Link>
             <Badge variant="outline" className="border-success/40 text-success">
-              Stages 1–2 · live
+              Stages 1–3 · live
             </Badge>
           </div>
         </div>
@@ -387,7 +390,7 @@ function Index() {
               { label: "Prompts", state: "live", desc: "LLM-driven EG-Arabic generation" },
               { label: "Synthesis", state: "live", desc: "ElevenLabs multilingual v2" },
               { label: "Auto QA", state: "live", desc: "Scribe v2 + WER/CER" },
-              { label: "Review", state: "scaffolded", desc: "Waveform + diff UI" },
+              { label: "Review", state: "live", desc: "Waveform + diff UI" },
               { label: "Export", state: "scaffolded", desc: "JSONL · CSV · HF · Whisper" },
             ].map((s) => (
               <Card key={s.label} className="p-4">
