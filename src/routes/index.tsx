@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { generatePrompts, queueSynthesis } from "@/lib/prompts.functions";
 import { synthesisTick, synthesisStats } from "@/lib/synthesis.functions";
+import { qaTick, qaStats } from "@/lib/qa.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { CATEGORIES } from "@/lib/ssdp/categories";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
-import { Loader2, Sparkles, Database, Mic, ListChecks, Download, Play, Cpu, AudioLines } from "lucide-react";
+import { Loader2, Sparkles, Database, Mic, ListChecks, Download, Play, Cpu, AudioLines, Gauge } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   component: Index,
