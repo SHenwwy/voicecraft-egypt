@@ -394,7 +394,7 @@ function Index() {
               { label: "Synthesis", state: "live", desc: "ElevenLabs multilingual v2" },
               { label: "Auto QA", state: "live", desc: "Scribe v2 + WER/CER" },
               { label: "Review", state: "live", desc: "Waveform + diff UI" },
-              { label: "Export", state: "scaffolded", desc: "JSONL · CSV · HF · Whisper" },
+              { label: "Export", state: "live", desc: "JSONL · CSV · HF · Whisper" },
             ].map((s) => (
               <Card key={s.label} className="p-4">
                 <div className="flex items-center justify-between mb-1">
