@@ -526,7 +526,7 @@ function Index() {
           </div>
         </section>
 
-        <ExportPanel previewExp={previewExp} dlPipeline={dlPipeline} />
+        <ExportPanel previewExp={previewExp} />
       </main>
     </div>
   );
@@ -536,7 +536,6 @@ type ExportFormat = "jsonl" | "csv" | "hf" | "whisper";
 
 function ExportPanel({
   previewExp,
-  dlPipeline,
 }: {
   previewExp: (args: { data: { format: ExportFormat } }) => Promise<{
     count: number;
@@ -545,7 +544,6 @@ function ExportPanel({
     mime: string;
     filename: string;
   }>;
-  dlPipeline: () => Promise<{ base64: string; filename: string; bytes: number }>;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -570,22 +568,6 @@ function ExportPanel({
       }
       triggerDownload(r.filename, r.mime, new Blob([r.content], { type: r.mime }));
       toast.success(`Exported ${r.count} samples (${r.totalDuration.toFixed(1)}s total)`);
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const downloadPipeline = async () => {
-    setBusy("zip");
-    try {
-      const r = await dlPipeline();
-      const bin = atob(r.base64);
-      const bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      triggerDownload(r.filename, "application/zip", new Blob([bytes], { type: "application/zip" }));
-      toast.success(`Downloaded Python pipeline (${(r.bytes / 1024).toFixed(0)} KB)`);
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
