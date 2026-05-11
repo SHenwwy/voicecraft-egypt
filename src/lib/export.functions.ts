@@ -1,7 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { buildPythonPipelineZip } from "./ssdp/python-pipeline";
 
 const FormatEnum = z.enum(["jsonl", "csv", "hf", "whisper"]);
 
@@ -223,9 +222,3 @@ export const exportStats = createServerFn({ method: "GET" }).handler(async () =>
   return counts;
 });
 
-export const downloadPythonPipeline = createServerFn({ method: "GET" }).handler(async () => {
-  const zip = await buildPythonPipelineZip();
-  // base64 so it can be transported through JSON
-  const b64 = Buffer.from(zip).toString("base64");
-  return { base64: b64, filename: "ssdp-pipeline.zip", bytes: zip.length };
-});

@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { generatePrompts, queueSynthesis } from "@/lib/prompts.functions";
 import { synthesisTick, synthesisStats } from "@/lib/synthesis.functions";
 import { qaTick, qaStats } from "@/lib/qa.functions";
-import { previewExport, downloadPythonPipeline } from "@/lib/export.functions";
+import { previewExport } from "@/lib/export.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { CATEGORIES } from "@/lib/ssdp/categories";
 import { Button } from "@/components/ui/button";
@@ -82,7 +82,6 @@ function Index() {
   const qaTickFn = useServerFn(qaTick);
   const qaStatsFn = useServerFn(qaStats);
   const previewExp = useServerFn(previewExport);
-  const dlPipeline = useServerFn(downloadPythonPipeline);
 
   const [count, setCount] = useState(20);
   const [seed, setSeed] = useState<string>("");
@@ -527,7 +526,7 @@ function Index() {
           </div>
         </section>
 
-        <ExportPanel previewExp={previewExp} dlPipeline={dlPipeline} />
+        <ExportPanel previewExp={previewExp} />
       </main>
     </div>
   );
@@ -537,7 +536,6 @@ type ExportFormat = "jsonl" | "csv" | "hf" | "whisper";
 
 function ExportPanel({
   previewExp,
-  dlPipeline,
 }: {
   previewExp: (args: { data: { format: ExportFormat } }) => Promise<{
     count: number;
@@ -546,7 +544,6 @@ function ExportPanel({
     mime: string;
     filename: string;
   }>;
-  dlPipeline: () => Promise<{ base64: string; filename: string; bytes: number }>;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -571,22 +568,6 @@ function ExportPanel({
       }
       triggerDownload(r.filename, r.mime, new Blob([r.content], { type: r.mime }));
       toast.success(`Exported ${r.count} samples (${r.totalDuration.toFixed(1)}s total)`);
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const downloadPipeline = async () => {
-    setBusy("zip");
-    try {
-      const r = await dlPipeline();
-      const bin = atob(r.base64);
-      const bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      triggerDownload(r.filename, "application/zip", new Blob([bytes], { type: "application/zip" }));
-      toast.success(`Downloaded Python pipeline (${(r.bytes / 1024).toFixed(0)} KB)`);
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -634,21 +615,6 @@ function ExportPanel({
         ))}
       </div>
 
-      <Card className="p-5 flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-        <div className="space-y-1">
-          <div className="font-medium flex items-center gap-2">
-            <Cpu className="h-4 w-4" /> Python pipeline (FastAPI · Celery · pluggable TTS)
-          </div>
-          <p className="text-xs text-muted-foreground max-w-2xl">
-            Self-hostable Python monorepo: ElevenLabs + XTTS-v2 backends, Whisper/Scribe QA, Postgres/Redis, exporters
-            for JSONL/CSV/HF/Whisper. Drop-in <code className="text-foreground">docker compose up</code>.
-          </p>
-        </div>
-        <Button onClick={downloadPipeline} disabled={busy === "zip"}>
-          {busy === "zip" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
-          Download .zip
-        </Button>
-      </Card>
     </section>
   );
 }

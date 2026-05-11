@@ -18,10 +18,7 @@ Four stages, each independently observable, resumable, and externally configurab
       × emotion × style)
 ```
 
-Two runnable surfaces ship in this repo:
-
-- **Web app** (TanStack Start + Lovable Cloud): control plane + reviewer UI. Browse it at `/` and `/review`.
-- **Python reference pipeline** (FastAPI + Celery + Redis + Postgres): downloadable from the Export tab. This is the production-grade shape — the web app mirrors the same data model so reviewers and engineers share one mental model.
+The runnable surface is a **web app** (TanStack Start + Lovable Cloud) that serves as both control plane and reviewer UI. Browse it at `/` and `/review`.
 
 Long-running stages are handled as **async jobs** with a `synthesis_jobs` queue keyed by a deterministic `fingerprint` (`prompt_id:voice_id:params`) so retries and resubmissions are idempotent. Audit log entries track every batch.
 
@@ -49,7 +46,7 @@ Each prompt is normalized (`src/lib/ssdp/normalize.ts` — alef/ya/ta-marbuta un
 ## 3. TTS synthesis
 
 **Backend:** ElevenLabs `eleven_multilingual_v2`.
-**Why:** best-in-class Arabic prosody among hosted TTS at the time of writing; supports the voice settings we need to *intentionally* introduce variation. The Python scaffold also ships an XTTS-v2 backend for self-hosting / cost control.
+**Why:** best-in-class Arabic prosody among hosted TTS at the time of writing; supports the voice settings we need to *intentionally* introduce variation.
 
 **Prosody jitter for synthetic-data diversity** (`src/lib/prompts.functions.ts → queueSynthesis`):
 
@@ -105,15 +102,10 @@ Only rows with `reviews.status = 'approved'` are exported. The `reviewer_text` (
 
 ## 6. Runnable end-to-end
 
-**Web app (this repo):**
 1. Open `/` → **Generate** → pick categories, count, seed → submit.
 2. **Synthesize** → queues TTS jobs (idempotent).
 3. **Review** at `/review` (or run **Auto-approve** with a score threshold).
 4. **Export** at `/export` → preview + download.
-
-**Python scaffold (production shape):**
-- Download from `/export` → "Download Python pipeline".
-- `cp .env.example .env && docker compose up --build` → FastAPI on `:8000`, Flower on `:5555`.
 
 ---
 
@@ -137,7 +129,7 @@ Only rows with `reviews.status = 'approved'` are exported. The `reviewer_text` (
 - **ASR-based QA is circular for some failure modes.** If Whisper itself can't handle Egyptian, low scores may reflect ASR weakness, not TTS weakness. We mitigate by normalizing both sides and surfacing scores to humans rather than auto-rejecting.
 - **No speaker diarization / VAD trimming yet.** Cloud TTS output is generally clean, but a real production pipeline would add silence trimming + loudness normalization.
 - **The reviewer UI is single-tenant.** No multi-reviewer agreement scoring (Cohen's κ) — easy add given the schema (multiple `reviews` per `sample_id`).
-- **Generation cost is non-trivial at scale.** The Python scaffold's pluggable XTTS-v2 backend is the answer for >10k-sample runs.
+- **Generation cost is non-trivial at scale.** A self-hosted TTS backend (e.g. XTTS-v2) would be the answer for >10k-sample runs.
 
 ---
 
@@ -159,7 +151,6 @@ src/
       normalize.ts      # Arabic text normalization
       diff.ts           # Token-level diff for review UI
       hash.ts           # Seeded RNG
-      python-pipeline.ts # Builds the downloadable FastAPI/Celery scaffold
   components/ssdp/Waveform.tsx
   integrations/supabase/  # Auto-generated, do not edit
 ```
