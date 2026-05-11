@@ -159,4 +159,4 @@ src/
 
 ## 10. Sample dataset
 
-A small sample (a few dozen approved rows) lives at the bottom of the **Export** tab — click any format, hit *Preview*, and copy/save. The same rows are what would feed `datasets.load_dataset("audiofolder", ...)` or a NeMo manifest in a real training run.
+A small sample (a few dozen approved rows) lives at the bottom of the **Export** tab — click any format, hit *Preview*, and copy/save. The same rows are what would feed `datasets.load_dataset("audiofolder", ...)` 
